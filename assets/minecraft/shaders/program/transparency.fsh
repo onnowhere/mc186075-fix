@@ -17,33 +17,36 @@ varying vec2 texCoord;
 
 #define NUM_LAYERS 6
 
-#define try_insert_sample(color_sampler, depth_sampler) { \
-    vec4 color = texture2D(color_sampler, texCoord); \
-    if (color.a > 0.0) { \
-        int i = sample_count++; \
-        color_samples[i] = color; \
-        depth_samples[i] = texture2D(depth_sampler, texCoord).r; \
-        \
-        /* Perform an insertion sort at the given index in the array, sorted by descending depth */ \
-        /* Although the i>0 check will always be false on the first iteration, keeping it here seems to elide a branch */ \
-        while (i > 0 && depth_samples[i] > depth_samples[i - 1]) { \
-            vec4 color = color_samples[i]; \
-            color_samples[i] = color_samples[i - 1]; \
-            color_samples[i - 1] = color; \
-            \
-            float depth = depth_samples[i]; \
-            depth_samples[i] = depth_samples[i - 1]; \
-            depth_samples[i - 1] = depth; \
-            \
-            i--; \
-        } \
-    } \
-}
-
 // Avoid an array of structs to keep data aligned in memory, helps some on older hardware
 // The color samples can then be linearly scanned after sorting is done, making optimal use of the cache lines
 vec4 color_samples[NUM_LAYERS];
 float depth_samples[NUM_LAYERS];
+
+// There will always be at least one sample (from the diffuse layer)
+int sample_count = 1;
+
+void try_insert_sample(sampler2D color_sampler, sampler2D depth_sampler) {
+    vec4 color = texture2D(color_sampler, texCoord);
+    if (color.a > 0.0) {
+        int i = sample_count++;
+        color_samples[i] = color;
+        depth_samples[i] = texture2D(depth_sampler, texCoord).r;
+       
+        /* Perform an insertion sort at the given index in the array, sorted by descending depth */
+        /* Although the i>0 check will always be false on the first iteration, keeping it here seems to elide a branch */
+        while (i > 0 && depth_samples[i] > depth_samples[i - 1]) {
+            vec4 color = color_samples[i];
+            color_samples[i] = color_samples[i - 1];
+            color_samples[i - 1] = color;
+           
+            float depth = depth_samples[i];
+            depth_samples[i] = depth_samples[i - 1];
+            depth_samples[i - 1] = depth;
+           
+            i--;
+        }
+    }
+}
 
 // This blending works with color components that have already been premultiplied by their alpha component
 vec3 blend(vec3 tex, vec4 sample) {
@@ -52,9 +55,6 @@ vec3 blend(vec3 tex, vec4 sample) {
 }
 
 void main() {
-    // There will always be at least one sample (from the diffuse layer)
-    int sample_count = 1;
-    
     // Always sample the diffuse layer to provide a base color for blending
     color_samples[0] = texture2D(DiffuseSampler, texCoord);
     color_samples[0].a = 1.0; // Discard the alpha channel to fix issues with cutout textures
